@@ -1,0 +1,256 @@
+*&---------------------------------------------------------------------*
+*& Report  ZMM_PODELETE_RPT
+*&
+*&---------------------------------------------------------------------*
+*&
+*&
+*&---------------------------------------------------------------------*
+REPORT zmm_podelete_rpt.
+TYPE-POOLS: truxs.
+
+
+SELECTION-SCREEN BEGIN OF BLOCK b1 WITH FRAME TITLE text-001.
+PARAMETERS: p_file TYPE rlgrap-filename.
+SELECTION-SCREEN END OF BLOCK b1.
+TYPES: BEGIN OF t_datatab,
+         col2(10) TYPE c,
+         col3(5)  TYPE c,
+         col4(1)  TYPE c,
+       END OF t_datatab,
+
+       BEGIN OF ty_final,
+         ebeln      TYPE ebeln,
+         ebelp      TYPE ebelp,
+         msg_typ(1) TYPE c,
+         msg(220)   TYPE c,
+       END OF ty_final.
+
+
+DATA: it_datatab TYPE STANDARD TABLE OF t_datatab.
+DATA: it_datatab1      TYPE TABLE OF alsmex_tabline,
+      wa_datatab1      TYPE alsmex_tabline,
+      lv_row           TYPE i VALUE 1,
+      wa_datatab       TYPE t_datatab,
+      gt_raw           TYPE truxs_t_text_data,
+      lv_pr            LIKE bapieban-preq_no,
+      wa_pr_del        TYPE bapieband,
+      it_poheader      TYPE bapimepoheader,
+      wa_poheader      TYPE bapimepoheader,
+      it_return        LIKE bapiret2 OCCURS 0 WITH HEADER LINE,
+      wa_return        LIKE LINE OF it_return,
+      it_final         TYPE TABLE OF ty_final,
+      wa_final         LIKE LINE OF it_final,
+      lv_frgke         TYPE frgke,
+      gt_fcat          TYPE slis_t_fieldcat_alv,
+      gs_fcat          TYPE slis_fieldcat_alv,
+      gv_repid         TYPE sy-repid,
+      lv_purchaseorder TYPE bapimepoheader-po_number,
+      it_poitem        TYPE  bapimepoitem OCCURS 0 WITH HEADER LINE.
+
+
+DATA: it_raw TYPE truxs_t_text_data.
+
+AT SELECTION-SCREEN ON VALUE-REQUEST FOR p_file.
+
+  CALL FUNCTION 'F4_FILENAME'
+    EXPORTING
+*     PROGRAM_NAME        = SYST-CPROG
+*     DYNPRO_NUMBER       = SYST-DYNNR
+      field_name = 'P_FILE'
+    IMPORTING
+      file_name  = p_file.
+
+START-OF-SELECTION.
+  CLEAR :it_datatab1,it_datatab,wa_datatab1,wa_datatab.
+
+  CALL FUNCTION 'TEXT_CONVERT_XLS_TO_SAP'
+    EXPORTING
+*     I_FIELD_SEPERATOR    =
+      i_line_header        = 'X'
+      i_tab_raw_data       = gt_raw
+      i_filename           = p_file
+    TABLES
+      i_tab_converted_data = it_datatab[]
+    EXCEPTIONS
+      conversion_failed    = 1
+      OTHERS               = 2.
+
+  IF sy-subrc NE  0.
+    MESSAGE ID sy-msgid
+            TYPE sy-msgty
+            NUMBER sy-msgno
+            WITH sy-msgv1 sy-msgv2 sy-msgv3 sy-msgv4.
+  ENDIF.
+
+
+  LOOP AT it_datatab INTO wa_datatab.
+    SELECT SINGLE frgke FROM ekko INTO lv_frgke
+      WHERE ebeln EQ wa_datatab-col2.
+
+    IF wa_datatab-col4 EQ 'X' AND ( lv_frgke NE 'R' OR lv_frgke NE 'S').
+
+      lv_purchaseorder = wa_datatab-col2.
+      it_poheader-po_number = wa_datatab-col2.
+      it_poheader-delete_ind = wa_datatab-col4.
+*      APPEND wa_poheader TO it_poheader.
+      it_poitem-po_item = wa_datatab-col3.
+      it_poitem-delete_ind = wa_datatab-col4.
+*      APPEND wa_poitem TO it_poitem.
+
+      CALL FUNCTION 'BAPI_PO_CHANGE'
+        EXPORTING
+          purchaseorder = lv_purchaseorder
+          poheader      = it_poheader
+*         POHEADERX     =
+*         POADDRVENDOR  =
+*         TESTRUN       =
+*         MEMORY_UNCOMPLETE            =
+*         MEMORY_COMPLETE              =
+*         POEXPIMPHEADER               =
+*         POEXPIMPHEADERX              =
+*         VERSIONS      =
+*         NO_MESSAGING  =
+*         NO_MESSAGE_REQ               =
+*         NO_AUTHORITY  =
+*         NO_PRICE_FROM_PO             =
+*         PARK_UNCOMPLETE              =
+*         PARK_COMPLETE =
+*        IMPORTING
+*         EXPHEADER     =
+*         EXPPOEXPIMPHEADER            =
+        TABLES
+          return        = it_return
+          poitem        = it_poitem
+*         POITEMX       =
+*         POADDRDELIVERY               =
+*         POSCHEDULE    =
+*         POSCHEDULEX   =
+*         POACCOUNT     =
+*         POACCOUNTPROFITSEGMENT       =
+*         POACCOUNTX    =
+*         POCONDHEADER  =
+*         POCONDHEADERX =
+*         POCOND        =
+*         POCONDX       =
+*         POLIMITS      =
+*         POCONTRACTLIMITS             =
+*         POSERVICES    =
+*         POSRVACCESSVALUES            =
+*         POSERVICESTEXT               =
+*         EXTENSIONIN   =
+*         EXTENSIONOUT  =
+*         POEXPIMPITEM  =
+*         POEXPIMPITEMX =
+*         POTEXTHEADER  =
+*         POTEXTITEM    =
+*         ALLVERSIONS   =
+*         POPARTNER     =
+*         POCOMPONENTS  =
+*         POCOMPONENTSX =
+*         POSHIPPING    =
+*         POSHIPPINGX   =
+*         POSHIPPINGEXP =
+*         POHISTORY     =
+*         POHISTORY_TOTALS             =
+*         POCONFIRMATION               =
+*         SERIALNUMBER  =
+*         SERIALNUMBERX =
+*         INVPLANHEADER =
+*         INVPLANHEADERX               =
+*         INVPLANITEM   =
+*         INVPLANITEMX  =
+*         POHISTORY_MA  =
+        .
+      COMMIT WORK AND WAIT.
+      READ TABLE it_return INTO wa_return INDEX 1.
+      IF sy-subrc EQ 0.
+
+        wa_final-msg_typ = wa_return-type.
+        wa_final-msg = wa_return-message.
+
+
+        APPEND wa_final TO it_final.
+
+      ENDIF.
+****BOC 1+ TRISHA requested by Ranbir 03.06.2022
+      SELECT SINGLE elikz
+      FROM ekpo
+      INTO @DATA(lv_elikz)
+      WHERE ebeln = @it_poheader-po_number
+        AND ebelp = @it_poitem-po_item.
+      IF lv_elikz <> 'X'.
+        UPDATE ekpo SET elikz = 'X'
+        WHERE ebeln = @it_poheader-po_number
+          AND ebelp = @it_poitem-po_item.
+      ENDIF.
+      CLEAR lv_elikz.
+****EOC 1+ TRISHA requested by Ranbir 03.06.2022
+      CLEAR: lv_purchaseorder,wa_poheader, wa_return.
+      CLEAR:it_poheader,it_poitem.
+      REFRESH:it_return.
+    ELSEIF wa_datatab-col4 NE 'X' .
+*      MESSAGE 'Deletion Indicator must be X.' TYPE 'I'.
+
+      wa_return-type = 'E'.
+      wa_return-message = 'Deletion Indicator must be X.'.
+      wa_final-msg_typ = wa_return-type.
+      wa_final-msg = wa_return-message.
+      wa_final-ebeln = wa_datatab-col2.
+      wa_final-ebelp = wa_datatab-col3.
+
+      APPEND wa_final TO it_final.
+    ELSEIF lv_frgke EQ 'R'.
+      wa_return-type = 'E'.
+      wa_return-message = 'PO is released.'.
+      wa_final-msg_typ = wa_return-type.
+      wa_final-msg =     wa_return-message.
+      wa_final-ebeln = wa_datatab-col2.
+      wa_final-ebelp = wa_datatab-col3.
+      CLEAR lv_frgke.
+      APPEND wa_final TO it_final.
+
+    ENDIF.
+  ENDLOOP.
+
+  CLEAR gs_fcat.
+  REFRESH gt_fcat.
+
+  gs_fcat-fieldname = 'EBELN'.
+  gs_fcat-tabname   = 'IT_FINAL'.
+  gs_fcat-seltext_m = 'Purchase Order No.'.
+  APPEND gs_fcat TO gt_fcat.
+  CLEAR gs_fcat.
+*
+  gs_fcat-fieldname = 'BNFPO'.
+  gs_fcat-tabname   = 'IT_FINAL'.
+  gs_fcat-seltext_m = 'Item of PO No.'.
+  APPEND gs_fcat TO gt_fcat.
+  CLEAR gs_fcat.
+
+  gs_fcat-fieldname = 'MSG_TYP'.
+  gs_fcat-tabname   = 'IT_FINAL'.
+  gs_fcat-seltext_m = 'MESSAGE TYPE'.
+  APPEND gs_fcat TO gt_fcat.
+  CLEAR gs_fcat.
+
+  gs_fcat-fieldname = 'MSG'.
+  gs_fcat-tabname   = 'IT_FINAL'.
+  gs_fcat-seltext_m = 'MESSAGE'.
+  APPEND gs_fcat TO gt_fcat.
+
+
+  CALL FUNCTION 'REUSE_ALV_GRID_DISPLAY'
+    EXPORTING
+      i_callback_program = gv_repid
+*     I_GRID_TITLE       = ''
+*     IS_LAYOUT          = GS_LAY
+      it_fieldcat        = gt_fcat[]
+    TABLES
+      t_outtab           = it_final
+    EXCEPTIONS
+      program_error      = 1
+      OTHERS             = 2.
+
+
+
+END-OF-SELECTION.
